@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-
+import matplotlib.pyplot as plt
 cap = cv2.VideoCapture(0)
 cap.set(3, 640)
 cap.set(4, 480)
@@ -17,7 +17,7 @@ def getContours(img, original_img):
 
     for cnt in contours:
         area = cv2.contourArea(cnt)
-        if area > 15000:
+        if area > 10000:
             perimeter = cv2.arcLength(cnt, True) #num sides
             approx = cv2.approxPolyDP(cnt, 0.02 * perimeter, True)
             if len(approx) == 4 and area > max_area:
@@ -84,9 +84,68 @@ while True:
 
     if warped_grid is not None:
         cv2.imshow('Bird Eye View', warped_grid)
+    
+    if warped_grid is not None:
+        warpedGray = cv2.cvtColor(warped_grid, cv2.COLOR_BGR2GRAY)
+        warpedBlur = cv2.GaussianBlur(warpedGray, (5,5), 3)
 
-    if cv2.waitKey(1) == ord('q'):
+        warpedThresh = cv2.adaptiveThreshold(warpedBlur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+        warpedThresh = cv2.bitwise_not(warpedThresh)
+        #cv2.imshow("Warp Canny", warpedThresh)
+        vertKern = np.ones((25,1), np.uint8)
+        horizonKern = np.ones((1,10), np.uint8)
+        # Extract vertical lines
+        verticalLines = cv2.erode(warpedThresh, vertKern, iterations=2)
+        verticalLines = cv2.dilate(verticalLines, vertKern, iterations=2)
+        horizontalLines = cv2.erode(warpedThresh, horizonKern, iterations=2)
+        horizontalLines = cv2.dilate(horizontalLines, horizonKern, iterations=2)
+        gridOverlay = cv2.bitwise_or(verticalLines, horizontalLines)
+        lines = cv2.HoughLinesP(gridOverlay, 1, np.pi/180, threshold=150, minLineLength=40, maxLineGap=5)
+
+        # Create a blank white image for the structured grid
+        structured_grid = np.ones_like(gridOverlay) * 255  # White background
+
+        # Draw detected lines in black
+        if lines is not None:
+            for line in lines:
+                x1, y1, x2, y2 = line[0]
+                cv2.line(structured_grid, (x1, y1), (x2, y2), (0, 0, 0), 2)  # Draw black lines
+
+        structured_grid_dilated = cv2.dilate(structured_grid, np.ones((3,3), np.uint8), iterations=2)
+        invertedGrid = cv2.bitwise_not(structured_grid_dilated)
+        cleanDigits = cv2.bitwise_and(warpedThresh, cv2.bitwise_not(invertedGrid))
+
+        cv2.imshow("Masked Image", cleanDigits)
+        grid_size = cleanDigits.shape[0]
+        cell_size = grid_size // 9
+
+        sudoku_cells = []
+
+        for row in range(9):
+            for col in range(9):
+                x1, y1 = col * cell_size, row * cell_size
+                x2, y2 = x1 + cell_size, y1 + cell_size
+
+                cell = cleanDigits[y1:y2, x1:x2]
+                cell = cv2.resize(cell, (28, 28))
+                sudoku_cells.append(cell)
+
+
+        fig, axes = plt.subplots(9, 9, figsize=(10, 10))
+
+        for i, cell in enumerate(sudoku_cells):
+            row, col = divmod(i, 9)  # Convert index to row, column
+            axes[row, col].imshow(cell, cmap='gray')  # Display cell
+            axes[row, col].axis('off')  # Hide axes for better visualization
+
+        plt.show()
+
+
+
+
+    if cv2.waitKey(1) & 0xFF == ord('q'):
         break
+
 
 cap.release()
 cv2.destroyAllWindows()
