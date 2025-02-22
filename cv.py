@@ -43,8 +43,8 @@ def reorder_points(pts):
     new_pts[2] = pts[np.argmax(s)]
 
     diff = np.diff(pts, axis = 1)
-    new_pts[1] = pts[np.argmin(diff)]  # Fixed from overwriting `new_pts`
-    new_pts[3] = pts[np.argmax(diff)]  # Fixed from overwriting `new_pts`
+    new_pts[1] = pts[np.argmin(diff)] 
+    new_pts[3] = pts[np.argmax(diff)] 
 
     return new_pts
 
@@ -104,8 +104,6 @@ while True:
 
         # Create a blank white image for the structured grid
         structured_grid = np.ones_like(gridOverlay) * 255  # White background
-
-        # Draw detected lines in black
         if lines is not None:
             for line in lines:
                 x1, y1, x2, y2 = line[0]
