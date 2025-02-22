@@ -128,6 +128,8 @@ while True:
 
                 cell = cleanDigits[y1:y2, x1:x2]
                 cell = cv2.resize(cell, (28, 28))
+                cell = cv2.bitwise_not(cell)
+                cell = cell[5:25, 5:25]
                 sudoku_cells.append(cell)
 
 
