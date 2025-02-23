@@ -5,8 +5,8 @@ import tensorflow as tf
 mnist = tf.keras.datasets.mnist
 (x_train, y_train), (x_test, y_test) = mnist.load_data()
 
-x_train_resized = np.array([cv2.resize(img, (21, 21)) for img in x_train])
-x_test_resized = np.array([cv2.resize(img, (21, 21)) for img in x_test])
+x_train_resized = np.array([cv2.resize(img, (28, 28)) for img in x_train])
+x_test_resized = np.array([cv2.resize(img, (28, 28)) for img in x_test])
 
 x_train_resized = x_train_resized.astype('float32') / 255.0
 x_test_resized = x_test_resized.astype('float32') / 255.0
@@ -14,16 +14,16 @@ x_test_resized = x_test_resized.astype('float32') / 255.0
 x_train_resized = np.expand_dims(x_train_resized, axis=-1)
 x_test_resized = np.expand_dims(x_test_resized, axis=-1)
 model = tf.keras.models.Sequential([
-    tf.keras.layers.Conv2D(32, (3,3), activation='relu', input_shape=(21,21,1)),
+    tf.keras.layers.Conv2D(32, (3,3), activation='relu', input_shape=(28,28,1)),
     tf.keras.layers.MaxPooling2D((2,2)),
     
     tf.keras.layers.Conv2D(64, (3,3), activation='relu'),
     tf.keras.layers.MaxPooling2D((2,2)),
     
-    tf.keras.layers.Conv2D(121, (3,3), activation='relu'),
+    tf.keras.layers.Conv2D(128, (3,3), activation='relu'),
     tf.keras.layers.Flatten(),
     
-    tf.keras.layers.Dense(121, activation='relu'),
+    tf.keras.layers.Dense(128, activation='relu'),
     tf.keras.layers.Dropout(0.3),  # Prevents overfitting
     tf.keras.layers.Dense(10, activation='softmax')  # Output layer (10 digits)
 ])

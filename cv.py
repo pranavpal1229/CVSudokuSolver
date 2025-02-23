@@ -1,11 +1,42 @@
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
+from tensorflow.keras.models import load_model
+
+model = load_model("digits.keras")
 cap = cv2.VideoCapture(0)
 cap.set(3, 640)
 cap.set(4, 480)
 
 last_grid = None  #needing this for constant flickering
+
+
+def preprocess_digit(cell):
+    """Ensure the digit is centered and cleaned before prediction."""
+    # Resize to a larger square
+    cell = cv2.resize(cell, (50, 50))
+
+    # Apply thresholding to clean up the image
+    _, cell_bin = cv2.threshold(cell, 100, 255, cv2.THRESH_BINARY_INV)
+
+    # Find contours and extract the digit
+    contours, _ = cv2.findContours(cell_bin, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if contours:
+        x, y, w, h = cv2.boundingRect(max(contours, key=cv2.contourArea))
+        cell = cell[y:y+h, x:x+w]  # Crop the digit
+
+    # Resize cropped digit to 24x24
+    cell = cv2.resize(cell, (24, 24))
+
+    # Add padding to make it 28x28
+    cell = cv2.copyMakeBorder(cell, 2, 2, 2, 2, cv2.BORDER_CONSTANT, value=0)
+
+    # Normalize
+    cell = cell.astype('float32') / 255.0
+    cell = np.expand_dims(cell, axis=[0, -1])  # Shape: (1, 28, 28, 1)
+
+    return cell
+
 
 def getContours(img, original_img):
     global last_grid
@@ -86,35 +117,49 @@ while True:
         cv2.imshow('Bird Eye View', warped_grid)
     
     if warped_grid is not None:
+        print('hi')
         warpedGray = cv2.cvtColor(warped_grid, cv2.COLOR_BGR2GRAY)
         warpedBlur = cv2.GaussianBlur(warpedGray, (5,5), 3)
 
+        # Initial threshold to get white digits on black background
+        # Convert to binary (ensure digits are white on black)
         warpedThresh = cv2.adaptiveThreshold(warpedBlur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
-        warpedThresh = cv2.bitwise_not(warpedThresh)
-        #cv2.imshow("Warp Canny", warpedThresh)
-        vertKern = np.ones((25,1), np.uint8)
-        horizonKern = np.ones((1,10), np.uint8)
-        # Extract vertical lines
-        verticalLines = cv2.erode(warpedThresh, vertKern, iterations=2)
-        verticalLines = cv2.dilate(verticalLines, vertKern, iterations=2)
-        horizontalLines = cv2.erode(warpedThresh, horizonKern, iterations=2)
-        horizontalLines = cv2.dilate(horizontalLines, horizonKern, iterations=2)
-        gridOverlay = cv2.bitwise_or(verticalLines, horizontalLines)
-        lines = cv2.HoughLinesP(gridOverlay, 1, np.pi/180, threshold=150, minLineLength=40, maxLineGap=5)
 
-        # Create a blank white image for the structured grid
-        structured_grid = np.ones_like(gridOverlay) * 255  # White background
-        if lines is not None:
-            for line in lines:
-                x1, y1, x2, y2 = line[0]
-                cv2.line(structured_grid, (x1, y1), (x2, y2), (0, 0, 0), 2)  # Draw black lines
+        # Create kernels for extracting grid lines
+        vertKern = np.ones((25, 1), np.uint8)
+        horizKern = np.ones((1, 25), np.uint8)
 
-        structured_grid_dilated = cv2.dilate(structured_grid, np.ones((3,3), np.uint8), iterations=2)
-        invertedGrid = cv2.bitwise_not(structured_grid_dilated)
-        cleanDigits = cv2.bitwise_and(warpedThresh, cv2.bitwise_not(invertedGrid))
+        # Extract vertical and horizontal lines
+        verticalLines = cv2.morphologyEx(warpedThresh, cv2.MORPH_OPEN, vertKern, iterations=2)
+        horizontalLines = cv2.morphologyEx(warpedThresh, cv2.MORPH_OPEN, horizKern, iterations=2)
 
-        cv2.imshow("Masked Image", cleanDigits)
-        grid_size = cleanDigits.shape[0]
+        # Combine grid lines
+        gridLines = cv2.bitwise_or(verticalLines, horizontalLines)
+
+        # Remove grid lines from the thresholded image (digitsOnly is now properly defined)
+        digitsOnly = cv2.bitwise_and(warpedThresh, cv2.bitwise_not(gridLines))
+
+        # Further clean the digits by removing any remaining noise
+        kernel = np.ones((3, 3), np.uint8)
+
+        # Enhance the digits by dilating them slightly
+        digitsOnly = cv2.dilate(digitsOnly, kernel, iterations=1)
+
+        # Remove any noise that might still remain
+        digitsOnly = cv2.erode(digitsOnly, kernel, iterations=1)
+
+        # Apply a stronger threshold to remove any remaining weak pixels
+        _, digitsOnly = cv2.threshold(digitsOnly, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+
+        # Ensure digits are **white on black**
+        digitsOnly = cv2.bitwise_not(digitsOnly)
+
+        # Show final processed image
+        cv2.imshow("Masked Image", digitsOnly)
+
+
+        grid_size = digitsOnly.shape[0]
         cell_size = grid_size // 9
 
         sudoku_cells = []
@@ -124,12 +169,11 @@ while True:
                 x1, y1 = col * cell_size, row * cell_size
                 x2, y2 = x1 + cell_size, y1 + cell_size
 
-                cell = cleanDigits[y1:y2, x1:x2]
+                cell = digitsOnly[y1:y2, x1:x2]
                 cell = cv2.resize(cell, (28, 28))
-                cell = cv2.bitwise_not(cell)
+                #cell = cv2.bitwise_not(cell)
                 cell = cell[5:25, 5:25]
                 sudoku_cells.append(cell)
-
 
         fig, axes = plt.subplots(9, 9, figsize=(10, 10))
 
@@ -139,7 +183,30 @@ while True:
             axes[row, col].axis('off')  # Hide axes for better visualization
 
         plt.show()
+        digits = []
+        for i, test_cell in enumerate(sudoku_cells):
+            if np.sum(test_cell) < 50:
+                digits.append(0)
+                continue
+            
+            test_cell = cv2.resize(test_cell, (28, 28))  # Resize for model input
+            test_cell = test_cell.astype('float32') / 255.0  
+            test_cell = np.expand_dims(test_cell, axis=[0, -1])
 
+
+            # Visualize each digit before prediction
+            if i % 5 == 0:
+                plt.imshow(test_cell.squeeze(), cmap="gray")
+                plt.title(f"Test Cell {i}")
+                plt.axis("off")
+                plt.show()
+
+            prediction = model.predict(test_cell)
+            digit = np.argmax(prediction)
+
+            digits.append(digit)
+
+        print(f"Final Predictions: {digits}")
 
 
 
