@@ -121,15 +121,9 @@ while True:
         warpedGray = cv2.cvtColor(warped_grid, cv2.COLOR_BGR2GRAY)
         warpedBlur = cv2.GaussianBlur(warpedGray, (5,5), 3)
 
-        # Initial threshold to get white digits on black background
-        # Convert to binary (ensure digits are white on black)
         warpedThresh = cv2.adaptiveThreshold(warpedBlur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
-
-        # Create kernels for extracting grid lines
         vertKern = np.ones((25, 1), np.uint8)
         horizKern = np.ones((1, 25), np.uint8)
-
-        # Extract vertical and horizontal lines
         verticalLines = cv2.morphologyEx(warpedThresh, cv2.MORPH_OPEN, vertKern, iterations=2)
         horizontalLines = cv2.morphologyEx(warpedThresh, cv2.MORPH_OPEN, horizKern, iterations=2)
 
@@ -146,16 +140,9 @@ while True:
         digitsOnly = cv2.dilate(digitsOnly, kernel, iterations=1)
 
         # Remove any noise that might still remain
-        digitsOnly = cv2.erode(digitsOnly, kernel, iterations=1)
-
-        # Apply a stronger threshold to remove any remaining weak pixels
+        digitsOnly = cv2.erode(digitsOnly, kernel, iterations=0)
         _, digitsOnly = cv2.threshold(digitsOnly, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-
-
-        # Ensure digits are **white on black**
         digitsOnly = cv2.bitwise_not(digitsOnly)
-
-        # Show final processed image
         cv2.imshow("Masked Image", digitsOnly)
 
 
@@ -170,9 +157,8 @@ while True:
                 x2, y2 = x1 + cell_size, y1 + cell_size
 
                 cell = digitsOnly[y1:y2, x1:x2]
+                cell = cv2.copyMakeBorder(cell, 2, 2, 2, 2, cv2.BORDER_CONSTANT, value=0)
                 cell = cv2.resize(cell, (28, 28))
-                #cell = cv2.bitwise_not(cell)
-                cell = cell[5:25, 5:25]
                 sudoku_cells.append(cell)
 
         fig, axes = plt.subplots(9, 9, figsize=(10, 10))
@@ -189,10 +175,8 @@ while True:
                 digits.append(0)
                 continue
             
-            test_cell = cv2.resize(test_cell, (28, 28))  # Resize for model input
             test_cell = test_cell.astype('float32') / 255.0  
             test_cell = np.expand_dims(test_cell, axis=[0, -1])
-
 
             # Visualize each digit before prediction
             if i % 5 == 0:
@@ -208,7 +192,17 @@ while True:
 
         print(f"Final Predictions: {digits}")
 
+        # --- OVERLAY PREDICTED DIGITS ON WARPED GRID ---
+        overlay_grid = warped_grid.copy()
+        for i, digit in enumerate(digits):
+            if digit == 0:
+                continue  # skip empty cells
+            row, col = divmod(i, 9)
+            x = col * cell_size + cell_size // 4
+            y = row * cell_size + 3 * cell_size // 4
+            cv2.putText(overlay_grid, str(digit), (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 
+        cv2.imshow("Overlay", overlay_grid)
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
